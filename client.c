@@ -555,6 +555,49 @@ int main(void) {
         if (strcmp(user_input, "exit") == 0) {
             break; // We sent "exit", now we quit
         }
+        
+        if (strcmp(user_input, "help") == 0 || strcmp(user_input, "HELP") == 0) {
+            printf("\n=== AVAILABLE COMMANDS ===\n\n");
+            printf("File Operations:\n");
+            printf("  VIEW                          - List all files\n");
+            printf("  VIEW -al                      - List all files with detailed information\n");
+            printf("  CREATE <filename>             - Create a new file\n");
+            printf("  DELETE <filename>             - Delete a file\n");
+            printf("  INFO <filename>               - Show file metadata\n");
+            printf("  READ <filename>               - Read file contents\n");
+            printf("  WRITE <filename> <sentence#>  - Edit a specific sentence (0-based index)\n");
+            printf("  STREAM <filename>             - Stream file word-by-word with delays\n");
+            printf("\nFolder Operations:\n");
+            printf("  CREATEFOLDER <foldername>     - Create a new folder\n");
+            printf("  DELETEFOLDER <foldername>     - Delete an empty folder\n");
+            printf("\nAdvanced Operations:\n");
+            printf("  APPEND <filename> <text>      - Append text to end of file\n");
+            printf("  MOVE <old_path> <new_path>    - Move/rename a file or folder\n");
+            printf("  UNDO <filename>               - Undo last write operation\n");
+            printf("  REDO <filename>               - Redo previously undone operation\n");
+            printf("\nCheckpoint Operations:\n");
+            printf("  CHECKPOINT <filename> <tag>   - Save a checkpoint with a tag\n");
+            printf("  VIEWCHECKPOINT <filename> <tag> - View a saved checkpoint\n");
+            printf("  REVERT <filename> <tag>       - Revert file to a checkpoint\n");
+            printf("  LISTCHECKPOINTS <filename>    - List all checkpoints for a file\n");
+            printf("\nAccess Control:\n");
+            printf("  APPROVE  <index>   - Grant access to another user\n");
+            printf("  DENY/REJECT  <index>   - REJECT access to another user\n");
+            printf("  LISTACCESS <filename>         - List all users with access\n");
+            printf("\nSearch:\n");
+            printf("  SEARCH <keyword>              - Search for keyword in all files\n");
+            printf("\nWrite Operation Details:\n");
+            printf("  - Words are 0-indexed (first word is at index 0)\n");
+            printf("  - Insert at index N means insert BEFORE current word at position N\n");
+            printf("  - Use \\n in word text to insert newlines (e.g., '0 HELLO \\n WORLD')\n");
+            printf("  - Type 'ETIRW' (WRITE backwards) when done editing\n");
+            printf("  - Empty line also finishes the write operation\n");
+            printf("\nOther:\n");
+            printf("  help                          - Show this help message\n");
+            printf("  exit                          - Quit the client\n");
+            printf("\n=========================\n\n");
+            continue; // Skip sending to server
+        }
 
         // --- NEW: Smart Reply Handling with multi-chunk support ---
         memset(server_reply, 0, BUFFER_SIZE);

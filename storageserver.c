@@ -434,14 +434,31 @@ void* handle_ss_connection(void* arg) {
                 char* words[1000]; // Max words in a sentence
                 int word_count = 0;
                 
-                // Tokenize the sentence into words
-                char* sentence_copy = strdup(target_sentence);
-                char* token = strtok(sentence_copy, " \t\n");
+                // First, replace actual newlines in the sentence with placeholder
+                char* sentence_with_placeholders = (char*)malloc(strlen(target_sentence) * 20 + 1);
+                char* src = target_sentence;
+                char* dst = sentence_with_placeholders;
+                while (*src) {
+                    if (*src == '\n') {
+                        strcpy(dst, " <<<NEWLINE>>> ");
+                        dst += strlen(" <<<NEWLINE>>> ");
+                        src++;
+                    } else {
+                        *dst++ = *src++;
+                    }
+                }
+                *dst = '\0';
+                
+                // Tokenize the sentence into words (split on spaces and tabs)
+                // The placeholder now has spaces around it, so it becomes its own word
+                char* sentence_copy = strdup(sentence_with_placeholders);
+                char* token = strtok(sentence_copy, " \t");
                 while (token != NULL && word_count < 1000) {
                     words[word_count++] = strdup(token);
-                    token = strtok(NULL, " \t\n");
+                    token = strtok(NULL, " \t");
                 }
                 free(sentence_copy);
+                free(sentence_with_placeholders);
 
                 printf("[SS_THREAD %d] Sentence %d has %d words\n", conn_fd, sentence_num, word_count);
 
@@ -548,13 +565,15 @@ void* handle_ss_connection(void* arg) {
                     char rest_of_line[1024];
                     if (sscanf(word_updates[i], "%d %[^\n]", &word_index, rest_of_line) == 2) {
                         if (word_index >= 0 && word_index <= word_count && word_count < 1000) {
-                            // Replace literal \n with actual newline character
-                            char processed_text[1024];
+                            // Replace literal \n with a special placeholder token (with spaces)
+                            char processed_text[2048];
                             char* src = rest_of_line;
                             char* dst = processed_text;
                             while (*src) {
                                 if (*src == '\\' && *(src + 1) == 'n') {
-                                    *dst++ = '\n';  // Replace \n with actual newline
+                                    // Use a placeholder with spaces so it becomes a separate word
+                                    strcpy(dst, " <<<NEWLINE>>> ");
+                                    dst += strlen(" <<<NEWLINE>>> ");
                                     src += 2;
                                     // Skip any whitespace immediately after \n
                                     while (*src == ' ' || *src == '\t') {
@@ -566,15 +585,31 @@ void* handle_ss_connection(void* arg) {
                             }
                             *dst = '\0';
                             
-                            // Shift words to the right to make space for insertion
-                            for (int j = word_count; j > word_index; j--) {
-                                words[j] = words[j - 1];
+                            // Tokenize the processed text into sub-words
+                            char* temp_words[100];
+                            int temp_count = 0;
+                            char* temp_copy = strdup(processed_text);
+                            char* temp_token = strtok(temp_copy, " \t");
+                            while (temp_token != NULL && temp_count < 100) {
+                                temp_words[temp_count++] = strdup(temp_token);
+                                temp_token = strtok(NULL, " \t");
                             }
-                            // Insert the processed text at word_index
-                            words[word_index] = strdup(processed_text);
-                            word_count++;
-                            printf("[SS_THREAD %d] Inserted '%s' at word[%d], word_count now %d\n", 
-                                   conn_fd, processed_text, word_index, word_count);
+                            free(temp_copy);
+                            
+                            // Insert all sub-words at the specified position
+                            if (temp_count > 0 && word_count + temp_count < 1000) {
+                                // Shift existing words to make space
+                                for (int j = word_count + temp_count - 1; j >= word_index + temp_count; j--) {
+                                    words[j] = words[j - temp_count];
+                                }
+                                // Insert new words
+                                for (int j = 0; j < temp_count; j++) {
+                                    words[word_index + j] = temp_words[j];
+                                }
+                                word_count += temp_count;
+                                printf("[SS_THREAD %d] Inserted %d words starting at word[%d], word_count now %d\n", 
+                                       conn_fd, temp_count, word_index, word_count);
+                            }
                         }
                     }
                 }
@@ -585,29 +620,68 @@ void* handle_ss_connection(void* arg) {
                 for (int i = 0; i < word_count; i++) {
                     // Skip empty words created as placeholders
                     if (words[i] && strlen(words[i]) > 0) {
-                        // Check if current word is just punctuation
-                        int is_just_punctuation = 1;
-                        for (int j = 0; words[i][j] != '\0'; j++) {
-                            if (words[i][j] != '.' && words[i][j] != '!' && words[i][j] != '?') {
-                                is_just_punctuation = 0;
-                                break;
-                            }
-                        }
+                        // Check if current word contains the newline placeholder
+                        char* newline_pos = strstr(words[i], "<<<NEWLINE>>>");
                         
-                        // Only add space if:
-                        // 1. Not the first word AND
-                        // 2. new_sentence is not empty AND
-                        // 3. Previous character is not a newline AND
-                        // 4. Current word doesn't start with newline AND
-                        // 5. Current word is not just punctuation
-                        size_t len = strlen(new_sentence);
-                        if (i > 0 && len > 0 && 
-                            new_sentence[len - 1] != '\n' && 
-                            words[i][0] != '\n' &&
-                            !is_just_punctuation) {
-                            strcat(new_sentence, " ");
+                        if (newline_pos != NULL) {
+                            // Word contains newline placeholder - handle specially
+                            // Split at the newline placeholder
+                            char before_newline[1024] = {0};
+                            char after_newline[1024] = {0};
+                            
+                            size_t before_len = newline_pos - words[i];
+                            if (before_len > 0) {
+                                strncpy(before_newline, words[i], before_len);
+                                before_newline[before_len] = '\0';
+                            }
+                            
+                            char* after_ptr = newline_pos + strlen("<<<NEWLINE>>>");
+                            if (*after_ptr != '\0') {
+                                strcpy(after_newline, after_ptr);
+                            }
+                            
+                            // Add part before newline (with space if needed)
+                            if (strlen(before_newline) > 0) {
+                                size_t len = strlen(new_sentence);
+                                if (i > 0 && len > 0 && new_sentence[len - 1] != '\n') {
+                                    strcat(new_sentence, " ");
+                                }
+                                strcat(new_sentence, before_newline);
+                            }
+                            
+                            // Add the actual newline
+                            strcat(new_sentence, "\n");
+                            
+                            // Add part after newline (no space before it)
+                            if (strlen(after_newline) > 0) {
+                                strcat(new_sentence, after_newline);
+                            }
+                        } else {
+                            // Normal word - no newline placeholder
+                            // Check if current word is just punctuation
+                            int is_just_punctuation = 1;
+                            for (int j = 0; words[i][j] != '\0'; j++) {
+                                if (words[i][j] != '.' && words[i][j] != '!' && words[i][j] != '?') {
+                                    is_just_punctuation = 0;
+                                    break;
+                                }
+                            }
+                            
+                            // Only add space if:
+                            // 1. Not the first word AND
+                            // 2. new_sentence is not empty AND
+                            // 3. Previous character is not a newline AND
+                            // 4. Current word doesn't start with newline AND
+                            // 5. Current word is not just punctuation
+                            size_t len = strlen(new_sentence);
+                            if (i > 0 && len > 0 && 
+                                new_sentence[len - 1] != '\n' && 
+                                words[i][0] != '\n' &&
+                                !is_just_punctuation) {
+                                strcat(new_sentence, " ");
+                            }
+                            strcat(new_sentence, words[i]);
                         }
-                        strcat(new_sentence, words[i]);
                     }
                     if (words[i]) free(words[i]); // Free word memory
                 }
@@ -829,21 +903,51 @@ void* handle_ss_connection(void* arg) {
                     break;
                 }
                 
-                // Tokenize by spaces and send word-by-word
-                char* token = strtok(content, " \t\n\r");
-                while (token != NULL) {
-                    send(conn_fd, token, strlen(token), 0);
-                    
-                    // Peek ahead to see if there's another word
-                    char* next_token = strtok(NULL, " \t\n\r");
-                    if (next_token != NULL) {
-                        send(conn_fd, " ", 1, 0); // Send space between words
-                        token = next_token;
+                // Stream character by character, preserving newlines
+                // Send words with delays, but also send newlines
+                int i = 0;
+                char word_buffer[1024];
+                int word_idx = 0;
+                
+                while (content[i] != '\0') {
+                    if (content[i] == ' ' || content[i] == '\t') {
+                        // End of word - send it if we have one
+                        if (word_idx > 0) {
+                            word_buffer[word_idx] = '\0';
+                            send(conn_fd, word_buffer, strlen(word_buffer), 0);
+                            send(conn_fd, " ", 1, 0);
+                            usleep(100000); // 0.1s delay between words
+                            word_idx = 0;
+                        } else {
+                            // Just whitespace - send it
+                            char ws[2] = {content[i], '\0'};
+                            send(conn_fd, ws, 1, 0);
+                        }
+                        i++;
+                    } else if (content[i] == '\n') {
+                        // End of word - send it if we have one
+                        if (word_idx > 0) {
+                            word_buffer[word_idx] = '\0';
+                            send(conn_fd, word_buffer, strlen(word_buffer), 0);
+                            usleep(100000); // 0.1s delay
+                            word_idx = 0;
+                        }
+                        // Send the newline
+                        send(conn_fd, "\n", 1, 0);
+                        i++;
                     } else {
-                        token = NULL; // No more tokens
+                        // Part of a word - accumulate
+                        word_buffer[word_idx++] = content[i];
+                        i++;
                     }
-                    
-                    usleep(100000); // 0.1s delay between words
+                }
+                
+                // Send any remaining word
+                if (word_idx > 0) {
+                    word_buffer[word_idx] = '\0';
+                    send(conn_fd, word_buffer, strlen(word_buffer), 0);
+                    send(conn_fd, " ", 1, 0);
+                    usleep(100000);
                 }
                 
                 // Send end marker

@@ -1745,7 +1745,7 @@ void* handle_client(void* arg) {
                     send(client_socket, "500 ERROR: SS FAILED", 20, 0);
                 }
 
-            } else if ((strncmp(buffer, "VIEW", 4) == 0) && (strncmp(buffer, "VIEWFOLDER", 10) != 0) && (strncmp(buffer, "VIEWREQUESTS", 12) != 0)) {
+            } else if ((strncmp(buffer, "VIEW", 4) == 0) && (strncmp(buffer, "VIEWFOLDER", 10) != 0) && (strncmp(buffer, "VIEWREQUESTS", 12) != 0) && (strncmp(buffer, "VIEWCHECKPOINT", 14) != 0) ) {
                 // --- FULL VIEW COMMAND LOGIC ---
                 bool flag_all = false;
                 bool flag_long = false;
@@ -2609,7 +2609,7 @@ void* handle_client(void* arg) {
                     }
                 }
             
-            } else if (strncmp(buffer, "VIEWFOLDER", 10) == 0) {
+            } else if (strncmp(buffer, "VIEWFOLDER", 10) == 0 && (buffer[10] == ' ' || buffer[10] == '\0')) {
                 // --- VIEWFOLDER COMMAND: List contents of a folder ---
                 char command[100], foldername[256];
                 sscanf(buffer, "%s %s", command, foldername);
@@ -2991,7 +2991,7 @@ void* handle_client(void* arg) {
                     }
                 }
 
-            } else if (strncmp(buffer, "VIEWCHECKPOINT", 14) == 0) {
+            } else if (strncmp(buffer, "VIEWCHECKPOINT", 14) == 0 && (buffer[14] == ' ' || buffer[14] == '\0')) {
                 // --- VIEWCHECKPOINT COMMAND ---
                 char command[100], filename[256], checkpoint_tag[256];
                 sscanf(buffer, "%s %s %s", command, filename, checkpoint_tag);
