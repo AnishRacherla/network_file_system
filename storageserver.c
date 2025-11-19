@@ -280,7 +280,8 @@ void* handle_ss_connection(void* arg) {
                     sprintf(count_str, "%d", sentence_count);
                     send(conn_fd, count_str, strlen(count_str), 0);
                 }
-                break;
+                close(conn_fd);
+                return NULL;
                 
             } else if (strncmp(buffer, "CLIENT_WRITE_LOCK", 17) == 0) {
                 // --- REAL WRITE LOGIC ---
@@ -1233,6 +1234,53 @@ void* handle_ss_connection(void* arg) {
                 
                 printf("[SS_THREAD %d] Replicated %s successfully to %s (%d bytes total)\n", 
                        conn_fd, source_path, local_path, total_bytes);
+                
+                // --- REPLICATE .undo FILE IF IT EXISTS ---
+                char undo_source_path[600];
+                snprintf(undo_source_path, sizeof(undo_source_path), "%s.undo", source_path);
+                char undo_local_path[600];
+                snprintf(undo_local_path, sizeof(undo_local_path), "%s.undo", local_path);
+                
+                // Connect to primary SS again to fetch .undo file
+                int undo_sock = socket(AF_INET, SOCK_STREAM, 0);
+                if (undo_sock >= 0) {
+                    struct sockaddr_in undo_addr;
+                    memset(&undo_addr, 0, sizeof(undo_addr));
+                    undo_addr.sin_family = AF_INET;
+                    undo_addr.sin_port = htons(primary_port);
+                    inet_pton(AF_INET, primary_ip, &undo_addr.sin_addr);
+                    
+                    if (connect(undo_sock, (struct sockaddr *)&undo_addr, sizeof(undo_addr)) == 0) {
+                        // Request .undo file from primary
+                        char undo_fetch_cmd[1024];
+                        sprintf(undo_fetch_cmd, "CLIENT_READ %s", undo_source_path);
+                        send(undo_sock, undo_fetch_cmd, strlen(undo_fetch_cmd), 0);
+                        
+                        // Try to save .undo file
+                        FILE* undo_backup_file = fopen(undo_local_path, "wb");
+                        if (undo_backup_file) {
+                            char undo_chunk[4096];
+                            int undo_bytes;
+                            int undo_total = 0;
+                            
+                            while ((undo_bytes = recv(undo_sock, undo_chunk, sizeof(undo_chunk), 0)) > 0) {
+                                fwrite(undo_chunk, 1, undo_bytes, undo_backup_file);
+                                undo_total += undo_bytes;
+                            }
+                            
+                            fclose(undo_backup_file);
+                            
+                            if (undo_total > 0) {
+                                printf("[SS_THREAD %d] Also replicated .undo file: %s (%d bytes)\n", 
+                                       conn_fd, undo_local_path, undo_total);
+                            } else {
+                                // No undo file exists on primary (normal for new files)
+                                remove(undo_local_path);
+                            }
+                        }
+                    }
+                    close(undo_sock);
+                }
                 
                 if (total_bytes == 0) {
                     printf("[SS_THREAD %d] WARNING: File is empty or replication failed!\n", conn_fd);

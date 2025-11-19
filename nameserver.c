@@ -791,6 +791,12 @@ void load_metadata() {
             
             if (!is_duplicate) {
                 file_table[file_count] = temp;
+                // IMPORTANT: Invalidate ss_index - will be updated when SS re-registers
+                file_table[file_count].ss_index = -1;
+                // Also invalidate replica indices
+                for (int r = 0; r < file_table[file_count].replica_count; r++) {
+                    file_table[file_count].replica_ss_indices[r] = -1;
+                }
                 file_count++;
             }
         }
@@ -803,6 +809,7 @@ void load_metadata() {
         fclose(f);
         printf("[METADATA] Loaded %d files (skipped %d corrupted/duplicates) and %d users from disk\n", 
                file_count, loaded_file_count - file_count, global_user_count);
+        printf("[METADATA] Note: All SS indices invalidated - will be updated when storage servers register\n");
     } else {
         printf("[METADATA] No previous metadata found (new server)\n");
         file_count = 0;
@@ -1016,44 +1023,46 @@ void* handle_client(void* arg) {
             // Parse file list (format: path1|path2|path3)
             char* token = strtok(file_list_raw, "|");
             while (token != NULL) {
-                // Check if file already exists in our table
+                // Extract logical name from path first
+                // Format: data/filename_timestamp or data/filename
+                char* last_slash = strrchr(token, '/');
+                char* filename = (last_slash != NULL) ? last_slash + 1 : token;
+                
+                // Remove timestamp if present (format: name_timestamp)
+                char logical_name[256];
+                strcpy(logical_name, filename);
+                char* underscore = strrchr(logical_name, '_');
+                if (underscore != NULL) {
+                    // Check if what follows is a timestamp (all digits)
+                    bool is_timestamp = true;
+                    for (char* p = underscore + 1; *p != '\0'; p++) {
+                        if (*p < '0' || *p > '9') {
+                            is_timestamp = false;
+                            break;
+                        }
+                    }
+                    if (is_timestamp) {
+                        *underscore = '\0'; // Remove timestamp
+                    }
+                }
+                
+                // Check if file already exists in our table BY LOGICAL NAME
                 int existing_file_index = -1;
                 for (int i = 0; i < file_count; i++) {
-                    if (strcmp(file_table[i].path_on_ss, token) == 0) {
+                    if (strcmp(file_table[i].name, logical_name) == 0) {
                         existing_file_index = i;
                         break;
                     }
                 }
                 
                 if (existing_file_index != -1) {
-                    // File already in table - update its SS index (in case it moved)
+                    // File already in table - update its SS index AND path
                     file_table[existing_file_index].ss_index = ss_index;
-                    printf("[SS %d] File %s already registered, updated SS index\n", 
-                           ss_index, file_table[existing_file_index].name);
+                    strcpy(file_table[existing_file_index].path_on_ss, token);
+                    printf("[SS %d] File %s already registered, updated SS index and path to %s\n", 
+                           ss_index, file_table[existing_file_index].name, token);
                 } else {
-                    // New file - extract logical name from path
-                    // Format: data/filename_timestamp or data/filename
-                    char* last_slash = strrchr(token, '/');
-                    char* filename = (last_slash != NULL) ? last_slash + 1 : token;
-                    
-                    // Remove timestamp if present (format: name_timestamp)
-                    char logical_name[256];
-                    strcpy(logical_name, filename);
-                    char* underscore = strrchr(logical_name, '_');
-                    if (underscore != NULL) {
-                        // Check if what follows is a timestamp (all digits)
-                        bool is_timestamp = true;
-                        for (char* p = underscore + 1; *p != '\0'; p++) {
-                            if (*p < '0' || *p > '9') {
-                                is_timestamp = false;
-                                break;
-                            }
-                        }
-                        if (is_timestamp) {
-                            *underscore = '\0'; // Remove timestamp
-                        }
-                    }
-                    
+                    // New file - add to table
                     if (file_count < MAX_FILES) {
                         strcpy(file_table[file_count].name, logical_name);
                         strcpy(file_table[file_count].owner, "system"); // Default owner
@@ -1063,9 +1072,10 @@ void* handle_client(void* arg) {
                         file_table[file_count].word_count = 0;
                         file_table[file_count].last_access = time(NULL);
                         file_table[file_count].acl_count = 0;
+                        file_table[file_count].replica_count = 0;
                         file_count++;
                         
-                        printf("[SS %d] Registered existing file: %s -> %s\n", 
+                        printf("[SS %d] Registered new file: %s -> %s\n", 
                                ss_index, logical_name, token);
                     }
                 }
