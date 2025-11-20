@@ -7,11 +7,18 @@ A scalable, fault-tolerant distributed file system implementation with hierarchi
 - [Architecture](#architecture)
 - [Features](#features)
 - [Installation](#installation)
+- [Quick Start](#quick-start)
 - [Usage](#usage)
 - [Command Reference](#command-reference)
 - [System Components](#system-components)
 - [Advanced Features](#advanced-features)
 - [Development](#development)
+
+## 📚 Additional Documentation
+- **[QUICK_START.md](QUICK_START.md)** - Quick reference for network deployment
+- **[NETWORK_DEPLOYMENT.md](NETWORK_DEPLOYMENT.md)** - Comprehensive network setup guide
+- **[NETWORK_EXPLAINED.md](NETWORK_EXPLAINED.md)** - Why nameserver uses 0.0.0.0 and network architecture explained
+- **[TESTING_GUIDE.md](TESTING_GUIDE.md)** - Complete testing procedures for network deployment
 
 ---
 
@@ -122,13 +129,58 @@ make cleanall
 
 ---
 
+## 🚀 Quick Start
+
+### For Local Testing (Same Machine)
+
+```bash
+# Terminal 1
+./nameserver
+
+# Terminal 2
+./storageserver 127.0.0.1 9001 8080
+
+# Terminal 3
+./storageserver 127.0.0.1 9002 8080
+
+# Terminal 4
+./client 127.0.0.1 8080
+```
+
+### For Network Deployment (Different Machines)
+
+**On Server Machine (e.g., 192.168.1.100):**
+```bash
+# Find your IP first
+hostname -I | awk '{print $1}'  # Linux/macOS
+# or
+ipconfig                         # Windows
+
+# Start nameserver
+./nameserver
+```
+
+**On Storage Server Machine(s):**
+```bash
+./storageserver 192.168.1.100 9001 8080
+```
+
+**On Client Machine(s):**
+```bash
+./client 192.168.1.100 8080
+```
+
+> **Important:** Replace `192.168.1.100` with your actual nameserver IP address!
+
+---
+
 ## 🚀 Usage
 
-### Starting the System
+### Local Deployment (Single Laptop)
 
 **Terminal 1 - Start Name Server:**
 ```bash
-./nameserver 8080
+./nameserver
 ```
 
 **Terminal 2 - Start Storage Server 1:**
@@ -146,7 +198,143 @@ make cleanall
 ./client 127.0.0.1 8080
 ```
 
-### Using Makefile Shortcuts
+### Network Deployment (Multiple Laptops)
+
+#### Step 1: Find IP Addresses
+On each machine, find the local network IP address:
+
+**Quick Method - Use Included Script:**
+```bash
+# On Linux/macOS
+chmod +x find_ip.sh
+./find_ip.sh
+
+# On Windows PowerShell
+.\find_ip.ps1
+```
+
+**Manual Methods:**
+
+**On Linux/macOS:**
+```bash
+# Method 1: Using ip command
+ip addr show | grep "inet " | grep -v 127.0.0.1
+
+# Method 2: Using ifconfig
+ifconfig | grep "inet " | grep -v 127.0.0.1
+
+# Method 3: Using hostname
+hostname -I
+```
+
+**On Windows:**
+```powershell
+ipconfig | findstr IPv4
+```
+
+Look for an IP address like `192.168.x.x` or `10.0.x.x` (your local network IP).
+
+#### Step 2: Start Name Server (Server Laptop)
+On the machine that will host the nameserver (e.g., IP: `192.168.1.100`):
+```bash
+./nameserver
+# or with custom port:
+# ./nameserver 8080
+```
+
+The nameserver automatically binds to **0.0.0.0 (all network interfaces)**, which means:
+- ✅ It listens on ALL IP addresses of this machine
+- ✅ Accepts connections from localhost (127.0.0.1)
+- ✅ Accepts connections from local network (192.168.x.x)
+- ✅ No need to specify an IP address - it handles everything automatically!
+
+The startup message will show you how clients can connect.
+
+#### Step 3: Start Storage Servers
+You can run storage servers on the same machine as the nameserver or on different machines.
+
+**On Server Machine (192.168.1.100):**
+```bash
+./storageserver 192.168.1.100 9001 8080
+```
+
+**On Another Laptop (192.168.1.101):**
+```bash
+./storageserver 192.168.1.100 9002 8080
+```
+> Note: First argument is the **nameserver's IP**, second is **this storage server's port**, third is **nameserver's port**.
+
+#### Step 4: Start Clients
+Clients can connect from any laptop on the network.
+
+**On Client Laptop (192.168.1.102):**
+```bash
+./client 192.168.1.100 8080
+```
+> Note: First argument is the **nameserver's IP**, second is **nameserver's port**.
+
+### Command Syntax Summary
+
+```bash
+# Name Server (binds to all interfaces - 0.0.0.0)
+./nameserver [port]
+# Example: ./nameserver 8080
+# Default: ./nameserver (uses port 8080)
+
+# Storage Server
+./storageserver <nameserver_ip> <my_port> [ns_port]
+# Example: ./storageserver 192.168.1.100 9001 8080
+
+# Client
+./client <nameserver_ip> [ns_port]
+# Example: ./client 192.168.1.100 8080
+```
+
+**Important Notes:**
+- **Nameserver** automatically binds to `0.0.0.0` (all network interfaces), so it accepts connections from:
+  - Localhost: `127.0.0.1`
+  - Local network: `192.168.x.x` or `10.0.x.x`
+  - Any other network interface on the machine
+- **Storage Servers** and **Clients** need to specify the nameserver's IP address
+- On the same machine, use `127.0.0.1`; across network, use the actual network IP
+
+### Network Deployment Example
+
+**Scenario:** 3 laptops on WiFi network
+
+| Machine | IP Address | Role |
+|---------|------------|------|
+| Laptop A | 192.168.1.100 | Name Server |
+| Laptop B | 192.168.1.101 | Storage Server 1 |
+| Laptop C | 192.168.1.102 | Storage Server 2 + Client |
+
+**On Laptop A (Name Server):**
+```bash
+./nameserver
+```
+
+**On Laptop B (Storage Server 1):**
+```bash
+./storageserver 192.168.1.100 9001 8080
+```
+
+**On Laptop C (Storage Server 2):**
+```bash
+./storageserver 192.168.1.100 9002 8080
+```
+
+**On Laptop C (Client - same machine, different terminal):**
+```bash
+./client 192.168.1.100 8080
+```
+
+**On any other laptop (Client):**
+```bash
+# First find Laptop A's IP, then connect
+./client 192.168.1.100 8080
+```
+
+### Using Makefile Shortcuts (Local Only)
 
 ```bash
 # Run name server
@@ -159,6 +347,8 @@ make run-ss2
 # Run client
 make run-client
 ```
+
+---
 
 ---
 
@@ -346,8 +536,40 @@ course-project-last-laugh/
 ├── filemap.c            # File mapping utilities
 ├── filemap.h            # Filemap interface
 ├── Makefile             # Build configuration
+├── find_ip.sh           # Helper script to find IP (Linux/macOS)
+├── find_ip.ps1          # Helper script to find IP (Windows)
 └── README.md            # This file
 ```
+
+### Important Notes for Network Deployment
+
+1. **Firewall Configuration**: Ensure ports 8080, 9001, 9002 are open on all machines
+2. **Same Network**: All machines must be on the same local network (same WiFi/LAN)
+3. **IP Address**: Use local network IP (192.168.x.x or 10.0.x.x), **NOT** 127.0.0.1
+4. **Start Order**: Always start nameserver first, then storage servers, then clients
+5. **IP Detection**: Storage servers automatically detect their IP from the socket connection
+6. **VPN**: Disable VPN if experiencing connection issues on local network
+
+### Network Architecture Explained
+
+**Why nameserver uses 0.0.0.0 (INADDR_ANY):**
+- Binding to `0.0.0.0` means "listen on ALL available network interfaces"
+- This is **standard practice** for servers - they don't choose a specific IP
+- The server accepts connections on any IP the machine has (localhost, WiFi, Ethernet, etc.)
+- Clients decide which IP to use when connecting
+
+**Example:**
+- Machine A has IPs: `127.0.0.1` (localhost), `192.168.1.100` (WiFi)
+- Nameserver binds to `0.0.0.0:8080`
+- Clients can connect via:
+  - `127.0.0.1:8080` (if on same machine)
+  - `192.168.1.100:8080` (if on network)
+
+**Why storage servers and clients specify IP:**
+- They are **clients** connecting TO the nameserver
+- Clients must specify exactly which IP to connect to
+- On same machine: use `127.0.0.1`
+- On network: use nameserver's network IP (e.g., `192.168.1.100`)
 
 ### Configuration
 
@@ -377,22 +599,64 @@ System logs are stored in:
 
 **Port already in use:**
 ```bash
-# Find process using port
+# On Linux/macOS - Find process using port
 lsof -i :8080
 
-# Kill process
+# On Windows
+netstat -ano | findstr :8080
+
+# Kill process (Linux/macOS)
 kill -9 <PID>
+
+# Kill process (Windows)
+taskkill /PID <PID> /F
 ```
 
-**Storage server won't connect:**
-- Ensure nameserver is running first
-- Check firewall settings
-- Verify IP address configuration
+**Storage server won't connect (Network Deployment):**
+1. Ensure nameserver is running first
+2. Verify nameserver's IP address is correct (use `ip addr` or `ipconfig`)
+3. Check if firewall is blocking the ports:
+   ```bash
+   # On Linux - Allow ports through firewall
+   sudo ufw allow 8080/tcp
+   sudo ufw allow 9001/tcp
+   sudo ufw allow 9002/tcp
+   
+   # On Windows - Add firewall rules (Run as Administrator)
+   netsh advfirewall firewall add rule name="NFS NameServer" dir=in action=allow protocol=TCP localport=8080
+   netsh advfirewall firewall add rule name="NFS Storage 1" dir=in action=allow protocol=TCP localport=9001
+   netsh advfirewall firewall add rule name="NFS Storage 2" dir=in action=allow protocol=TCP localport=9002
+   ```
+4. Ensure all machines are on the same network (same subnet)
+5. Try pinging the nameserver from storage server:
+   ```bash
+   ping 192.168.1.100
+   ```
 
-**Client can't authenticate:**
-- Restart nameserver to clear sessions
-- Check network connectivity
-- Verify nameserver is accepting connections
+**Client can't connect (Network Deployment):**
+1. Verify nameserver IP and port are correct
+2. Check network connectivity: `ping <nameserver_ip>`
+3. Ensure nameserver is listening on all interfaces (it should bind to 0.0.0.0)
+4. Check firewall settings on nameserver machine
+5. Verify you're using the correct local network IP (not localhost 127.0.0.1)
+
+**Can't find local IP address:**
+```bash
+# Linux/macOS
+ip route get 8.8.8.8 | awk '{print $7; exit}'
+
+# Alternative for Linux
+hostname -I | awk '{print $1}'
+
+# Windows PowerShell
+(Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike "*Loopback*"}).IPAddress
+```
+
+**Connection works locally but not across network:**
+1. Ensure you're using the **local network IP** (192.168.x.x or 10.0.x.x), not 127.0.0.1
+2. Check if both machines are on the same WiFi/network
+3. Disable VPN if active (can interfere with local network)
+4. On some networks, client isolation might be enabled - check router settings
 
 ---
 
@@ -438,4 +702,4 @@ Institution: [Your Institution]
 
 
 ASSUMPTION:
-when multiple user are writing and one of them changes the sentence count(by adding delimeter), the indexing changes,so the second person write wont take place like what it should .(this is not handled in our project).
+when multiple user are writing and one of them changes the sentence count(by adding delimeter), the indexing changes,so the second person write wont take place like what it should . if we want we can also  send error msg to user2 if user1 changes sentence count (by adding delimeter).

@@ -431,11 +431,29 @@ void handle_direct_write(const char* ip, int port, const char* path, int sentenc
 
 
 // --- Main Function ---
-int main(void) {
+int main(int argc, char* argv[]) {
     // Initialize terminal settings
     tcgetattr(STDIN_FILENO, &orig_termios);
     atexit(disable_raw_mode); // Ensure terminal is restored on any exit
     signal(SIGINT, handle_sigint); // Handle Ctrl+C gracefully
+    
+    // Parse command-line arguments for nameserver IP and port
+    char ns_ip[100] = "127.0.0.1"; // Default to localhost
+    int ns_port = NS_PORT; // Default port
+    
+    if (argc > 1) {
+        strncpy(ns_ip, argv[1], sizeof(ns_ip) - 1);
+        ns_ip[sizeof(ns_ip) - 1] = '\0';
+    }
+    if (argc > 2) {
+        ns_port = atoi(argv[2]);
+        if (ns_port <= 0 || ns_port > 65535) {
+            fprintf(stderr, "Invalid port number. Using default port %d\n", NS_PORT);
+            ns_port = NS_PORT;
+        }
+    }
+    
+    printf("Connecting to Name Server at %s:%d...\n", ns_ip, ns_port);
     
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd == -1) {
@@ -445,9 +463,9 @@ int main(void) {
     struct sockaddr_in server_address;
     memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(NS_PORT);
+    server_address.sin_port = htons(ns_port);
 
-    if (inet_pton(AF_INET, "127.0.0.1", &server_address.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, ns_ip, &server_address.sin_addr) <= 0) {
         perror("inet_pton failed");
         close(client_fd);
         exit(EXIT_FAILURE);

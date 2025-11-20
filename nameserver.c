@@ -3860,11 +3860,26 @@ void pick_backup_servers(int primary_index, int* backup_indices, int* backup_cou
 
 
 // --- Main Function ---
-int main(void) {
+int main(int argc, char* argv[]) {
+    // Parse command-line arguments for port (optional)
+    int port = PORT; // Default port from #define
+    if (argc > 1) {
+        port = atoi(argv[1]);
+        if (port <= 0 || port > 65535) {
+            fprintf(stderr, "Invalid port number. Using default port %d\n", PORT);
+            port = PORT;
+        }
+    }
+    
+    printf("========================================\n");
+    printf("  Distributed Network File System\n");
+    printf("  Name Server Starting...\n");
+    printf("========================================\n");
+    
     // Initialize hashmap and cache for O(1) file lookups
     hashmap_init(&file_hashmap);
     cache_init(&file_cache);
-    printf("HashMap and LRU Cache initialized for efficient search\n");
+    printf("✓ HashMap and LRU Cache initialized\n");
     
     // Initialize logging system
     init_logger("nameserver.log");
@@ -3880,7 +3895,7 @@ int main(void) {
         hashmap_put(&file_hashmap, file_table[i].name, i);
     }
     pthread_mutex_unlock(&file_table_mutex);
-    printf("Rebuilt hashmap with %d files\n", file_count);
+    printf("✓ Rebuilt hashmap with %d files\n", file_count);
     
     // Start heartbeat monitor thread
     pthread_t heartbeat_thread;
@@ -3908,24 +3923,36 @@ int main(void) {
     struct sockaddr_in address;
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    address.sin_addr.s_addr = INADDR_ANY;  // Listen on all network interfaces
+    address.sin_port = htons(port);
 
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("bind failed");
-        log_message(LOG_ERROR, "Failed to bind to port %d", PORT);
+        log_message(LOG_ERROR, "Failed to bind to port %d", port);
         close(server_fd);
         exit(EXIT_FAILURE);
     }
     if (listen(server_fd, 10) < 0) {
         perror("listen failed");
-        log_message(LOG_ERROR, "Failed to listen on port %d", PORT);
+        log_message(LOG_ERROR, "Failed to listen on port %d", port);
         close(server_fd);
         exit(EXIT_FAILURE);
     }
 
-    printf("Name Server listening on port %d...\n", PORT);
-    log_message(LOG_INFO, "Name Server listening on port %d", PORT);
+    printf("\n========================================\n");
+    printf("  Name Server Ready!\n");
+    printf("========================================\n");
+    printf("Listening on: 0.0.0.0:%d (all interfaces)\n", port);
+    printf("\nClients can connect using:\n");
+    printf("  - Local:   ./client 127.0.0.1 %d\n", port);
+    printf("  - Network: ./client <this_machine_ip> %d\n", port);
+    printf("\nTo find this machine's IP:\n");
+    printf("  - Linux/macOS: ./find_ip.sh\n");
+    printf("  - Windows:     .\\find_ip.ps1\n");
+    printf("\nPress Ctrl+C to stop the server.\n");
+    printf("========================================\n\n");
+    
+    log_message(LOG_INFO, "Name Server listening on port %d", port);
     fflush(stdout);
 
     // Main server loop

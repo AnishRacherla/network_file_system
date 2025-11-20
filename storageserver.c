@@ -1500,9 +1500,25 @@ int register_with_ns(const char* ns_ip, int ns_port, int my_port) {
     char file_list[4096] = {0};
     scan_data_directory(file_list, sizeof(file_list));
 
-    // Send REGISTER with IP, port, and file list
+    // Get our local IP address from the socket connection
+    // This gets the IP address that we're using to connect to the nameserver
+    struct sockaddr_in local_addr;
+    socklen_t addr_len = sizeof(local_addr);
+    char my_ip[100];
+    
+    if (getsockname(ss_fd, (struct sockaddr*)&local_addr, &addr_len) == 0) {
+        inet_ntop(AF_INET, &local_addr.sin_addr, my_ip, sizeof(my_ip));
+        printf("Detected local IP address: %s\n", my_ip);
+    } else {
+        // Fallback to provided nameserver IP if we can't detect
+        // (This happens when both are on same machine)
+        strcpy(my_ip, ns_ip);
+        printf("Using provided IP address: %s\n", my_ip);
+    }
+
+    // Send REGISTER with our IP, port, and file list
     char register_msg[8192];
-    snprintf(register_msg, sizeof(register_msg), "REGISTER 127.0.0.1 %d %s", my_port, file_list);
+    snprintf(register_msg, sizeof(register_msg), "REGISTER %s %d %s", my_ip, my_port, file_list);
     send(ss_fd, register_msg, strlen(register_msg), 0);
 
     char buffer[BUFFER_SIZE] = {0};
@@ -1527,17 +1543,38 @@ int register_with_ns(const char* ns_ip, int ns_port, int my_port) {
 // --- Main Function ---
 int main(int argc, char* argv[]) {
     
-    // Parse command-line arguments for port (optional)
-    int my_port = MY_PORT; // Default port
+    // Parse command-line arguments: <ns_ip> <my_port> <ns_port>
+    char ns_ip[100] = "127.0.0.1"; // Default nameserver IP
+    int my_port = MY_PORT; // Default storage server port
+    int ns_port = NS_PORT; // Default nameserver port
+    
+    if (argc < 2) {
+        printf("Usage: %s <nameserver_ip> [my_port] [ns_port]\n", argv[0]);
+        printf("Using defaults: NS=%s:%d, MyPort=%d\n", ns_ip, ns_port, my_port);
+    }
+    
     if (argc > 1) {
-        my_port = atoi(argv[1]);
+        strncpy(ns_ip, argv[1], sizeof(ns_ip) - 1);
+        ns_ip[sizeof(ns_ip) - 1] = '\0';
+    }
+    if (argc > 2) {
+        my_port = atoi(argv[2]);
         if (my_port <= 0 || my_port > 65535) {
             fprintf(stderr, "Invalid port number. Using default port %d\n", MY_PORT);
             my_port = MY_PORT;
         }
     }
+    if (argc > 3) {
+        ns_port = atoi(argv[3]);
+        if (ns_port <= 0 || ns_port > 65535) {
+            fprintf(stderr, "Invalid NS port. Using default port %d\n", NS_PORT);
+            ns_port = NS_PORT;
+        }
+    }
     
-    printf("Storage Server will use port: %d\n", my_port);
+    printf("Storage Server configuration:\n");
+    printf("  - Name Server: %s:%d\n", ns_ip, ns_port);
+    printf("  - My Port: %d\n", my_port);
     
     // Create port-specific storage directory (e.g., data_ss_9001, data_ss_9002)
     snprintf(STORAGE_DIR, sizeof(STORAGE_DIR), "data_ss_%d", my_port);
@@ -1551,8 +1588,8 @@ int main(int argc, char* argv[]) {
     init_lock_table();
     
     // --- Part 1: Register with Name Server ---
-    if (register_with_ns("127.0.0.1", NS_PORT, my_port) != 0) {
-        fprintf(stderr, "Could not register with Name Server. Exiting.\n");
+    if (register_with_ns(ns_ip, ns_port, my_port) != 0) {
+        fprintf(stderr, "Could not register with Name Server at %s:%d. Exiting.\n", ns_ip, ns_port);
         exit(EXIT_FAILURE);
     }
 
