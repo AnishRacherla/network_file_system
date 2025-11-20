@@ -3,18 +3,17 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// ============================================
+
 // GLOBAL STATE FOR ACCESS REQUESTS
-// ============================================
 
 AccessRequest pending_requests[MAX_REQUESTS];
 int request_count = 0;
 int next_request_id = 1;
 pthread_mutex_t request_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// ============================================
+// 
 // BONUS 1: FOLDER OPERATIONS
-// ============================================
+// 
 
 // Normalize path (remove trailing slashes, handle //)
 void normalize_path(char* path) {
